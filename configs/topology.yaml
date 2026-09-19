@@ -1,0 +1,66 @@
+# Two-switch Cumulus Linux validation topology:
+#
+# Host A --- swp1 [switch1] swp2 === trunk === swp1 [switch2] swp2 --- Host B
+#
+# VLAN 10: engineering
+# VLAN 20: management
+
+vlans:
+  10: engineering
+  20: management
+
+hosts:
+  host_a:
+    display_name: Host A
+    connects_to:
+      switch: switch1
+      port: swp1
+    expected_vlan: 10
+
+  host_b:
+    display_name: Host B
+    connects_to:
+      switch: switch2
+      port: swp2
+    expected_vlan: 10
+
+switches:
+  switch1:
+    display_name: switch1
+    ssh:
+      host: "${SWITCH1_HOST}"
+      port: 22
+      username: "${SWITCH1_USER}"
+      key_filename: "${SWITCH1_SSH_KEY}"
+    ports:
+      swp1:
+        role: access
+        expected_pvid: 10
+      swp2:
+        role: trunk
+        expected_allowed_vlans:
+          - 10
+          - 20
+        peer:
+          switch: switch2
+          port: swp1
+
+  switch2:
+    display_name: switch2
+    ssh:
+      host: "${SWITCH2_HOST}"
+      port: 22
+      username: "${SWITCH2_USER}"
+      key_filename: "${SWITCH2_SSH_KEY}"
+    ports:
+      swp1:
+        role: trunk
+        expected_allowed_vlans:
+          - 10
+          - 20
+        peer:
+          switch: switch1
+          port: swp2
+      swp2:
+        role: access
+        expected_pvid: 10
