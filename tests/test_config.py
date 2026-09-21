@@ -60,3 +60,9 @@ def test_rejects_unknown_host_port(tmp_path: Path) -> None:
 
     with pytest.raises(TopologyConfigError, match="unknown port"):
         load_topology(invalid_path)
+
+def test_hosts_have_test_network_addresses() -> None:
+    topology = load_topology(TOPOLOGY_PATH)
+
+    assert topology.hosts["host_a"].ip_address == "10.0.10.11"
+    assert topology.hosts["host_b"].ip_address == "10.0.10.12"

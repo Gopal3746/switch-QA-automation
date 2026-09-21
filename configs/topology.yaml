@@ -12,6 +12,7 @@ vlans:
 hosts:
   host_a:
     display_name: Host A
+    ip_address: 10.0.10.11
     connects_to:
       switch: switch1
       port: swp1
@@ -19,6 +20,7 @@ hosts:
 
   host_b:
     display_name: Host B
+    ip_address: 10.0.10.12
     connects_to:
       switch: switch2
       port: swp2

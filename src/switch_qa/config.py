@@ -59,6 +59,7 @@ class HostConfig:
 
     name: str
     display_name: str
+    ip_address: str
     switch: str
     port: str
     expected_vlan: int
@@ -128,6 +129,7 @@ def _build_host(name: str, data: dict[str, Any]) -> HostConfig:
     return HostConfig(
         name=name,
         display_name=str(data.get("display_name", name)),
+        ip_address=str(data["ip_address"]),
         switch=str(connection["switch"]),
         port=str(connection["port"]),
         expected_vlan=int(data["expected_vlan"]),
