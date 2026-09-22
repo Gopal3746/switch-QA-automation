@@ -1,0 +1,77 @@
+- id: TC-01
+  test: tests/qa/test_vlan.py::test_access_ports_use_expected_pvid
+  category: functional
+  area: VLAN
+  requirement: Access ports must use engineering VLAN 10.
+
+- id: TC-02
+  test: tests/qa/test_vlan.py::test_switch1_trunk_carries_required_vlans
+  category: functional
+  area: VLAN
+  requirement: Switch1 trunk must carry VLANs 10 and 20.
+
+- id: TC-03
+  test: tests/qa/test_vlan.py::test_switch2_trunk_carries_required_vlans
+  category: functional
+  area: VLAN
+  requirement: Switch2 trunk must carry VLANs 10 and 20.
+
+- id: TC-04
+  test: tests/qa/test_vlan.py::test_vlan_isolation_blocks_cross_vlan_traffic
+  category: security
+  area: VLAN
+  requirement: Hosts in different VLANs must remain isolated.
+
+- id: TC-05
+  test: tests/qa/test_ports.py::test_port_admin_down_and_up_transitions
+  category: functional
+  area: Port state
+  requirement: Administrative state changes must be observable.
+
+- id: TC-06
+  test: tests/qa/test_ports.py::test_trunk_operational_state_tracks_peer
+  category: functional
+  area: Port state
+  requirement: Trunk operational state must reflect peer availability.
+
+- id: TC-07
+  test: tests/qa/test_connectivity.py::test_host_a_reaches_host_b
+  category: functional
+  area: Connectivity
+  requirement: Hosts in VLAN 10 must have end-to-end connectivity.
+
+- id: TC-08
+  test: tests/qa/test_connectivity.py::test_packet_loss_remains_below_threshold
+  category: performance
+  area: Connectivity
+  requirement: Packet loss must remain at or below one percent.
+
+- id: TC-09
+  test: tests/qa/test_negative.py::test_missing_trunk_vlan_is_detected
+  category: negative
+  area: VLAN
+  requirement: The suite must detect a missing required trunk VLAN.
+
+- id: TC-10
+  test: tests/qa/test_negative.py::test_incorrect_access_pvid_is_detected
+  category: negative
+  area: VLAN
+  requirement: The suite must detect an incorrect access-port PVID.
+
+- id: TC-11
+  test: tests/qa/test_negative.py::test_down_access_port_prevents_connectivity
+  category: negative
+  area: Connectivity
+  requirement: A down access port must not produce a false connectivity pass.
+
+- id: TC-12
+  test: tests/qa/test_recovery.py::test_saved_configuration_survives_reload
+  category: regression
+  area: Persistence
+  requirement: Saved configuration must survive a reload.
+
+- id: TC-13
+  test: tests/qa/test_recovery.py::test_connectivity_recovers_after_defect_correction
+  category: regression
+  area: Recovery
+  requirement: Connectivity must recover after both defects are corrected.
