@@ -1,9 +1,11 @@
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
 from switch_qa.config import TopologyConfig, load_topology
 from switch_qa.devices import Host, Switch
+from switch_qa.diagnostics import EvidenceCollector
 from switch_qa.simulated_transport import SimulatedTransport
 from switch_qa.simulation import SimulatedTopologyState
 
@@ -122,4 +124,53 @@ def buggy_host_a(
         "host_a",
         topology,
         buggy_switch1,
+    )
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    group = parser.getgroup("switch-qa")
+
+    group.addoption(
+        "--evidence-dir",
+        default="reports/evidence",
+        help="Directory for failed-test diagnostic evidence",
+    )
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item,
+    call: pytest.CallInfo[object],
+):
+    outcome = yield
+    report = outcome.get_result()
+
+    if report.when != "call" or not report.failed:
+        return
+
+    test_id_marker = item.get_closest_marker("test_id")
+
+    if test_id_marker and test_id_marker.args:
+        test_id = str(test_id_marker.args[0])
+    else:
+        test_id = item.nodeid
+
+    switches: dict[str, Switch] = {}
+    hosts: dict[str, Host] = {}
+
+    for fixture_value in item.funcargs.values():
+        if isinstance(fixture_value, Switch):
+            switches[fixture_value.name] = fixture_value
+        elif isinstance(fixture_value, Host):
+            hosts[fixture_value.name] = fixture_value
+
+    evidence_directory = Path(
+        item.config.getoption("--evidence-dir")
+    )
+    collector = EvidenceCollector(evidence_directory)
+
+    collector.collect(
+        test_id,
+        switches=switches,
+        hosts=hosts,
+        failure=str(report.longrepr),
     )
