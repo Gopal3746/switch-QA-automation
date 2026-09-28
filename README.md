@@ -1,5 +1,5 @@
 # Cumulus Switch QA Automation
-
+[![Switch QA](https://github.com/Gopal3746/switch-QA-automation/actions/workflows/qa-tests.yml/badge.svg)](https://github.com/Gopal3746/switch-QA-automation/actions/workflows/qa-tests.yml)
 A Python and Pytest framework for validating VLAN configuration, switch-port
 state, and end-to-end connectivity across a two-switch Cumulus Linux topology.
 

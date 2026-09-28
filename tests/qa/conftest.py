@@ -1,4 +1,4 @@
-from collections.abc import Generator, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -11,6 +11,7 @@ from switch_qa.simulated_transport import SimulatedTransport
 from switch_qa.simulation import SimulatedTopologyState
 
 REPORTER_KEY = pytest.StashKey[RunReporter]()
+
 
 def build_switch(
     switch_name: str,
@@ -128,6 +129,7 @@ def buggy_host_a(
         buggy_switch1,
     )
 
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("switch-qa")
 
@@ -151,67 +153,6 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(
-    item: pytest.Item,
-    call: pytest.CallInfo[object],
-) -> Generator[None, object, None]:
-    outcome = yield
-    report = outcome.get_result()
-
-    if report.when != "call":
-        return
-
-    test_id_marker = item.get_closest_marker("test_id")
-
-    if test_id_marker and test_id_marker.args:
-        test_id = str(test_id_marker.args[0])
-    else:
-        test_id = item.nodeid
-
-    evidence_path: Path | None = None
-
-    if report.failed:
-        switches: dict[str, Switch] = {}
-        hosts: dict[str, Host] = {}
-
-        for fixture_value in item.funcargs.values():
-            if isinstance(fixture_value, Switch):
-                switches[fixture_value.name] = fixture_value
-            elif isinstance(fixture_value, Host):
-                hosts[fixture_value.name] = fixture_value
-
-        evidence_directory = Path(
-            item.config.getoption("--evidence-dir")
-        )
-        collector = EvidenceCollector(evidence_directory)
-
-        evidence_path = collector.collect(
-            test_id,
-            switches=switches,
-            hosts=hosts,
-            failure=str(report.longrepr),
-        )
-
-    reporter = item.config.stash[REPORTER_KEY]
-    reporter.record(
-        test_id=test_id,
-        node_id=item.nodeid,
-        outcome=report.outcome,
-        duration_seconds=report.duration,
-        failure=(
-            str(report.longrepr)
-            if report.failed
-            else None
-        ),
-        evidence_path=(
-            str(evidence_path)
-            if evidence_path is not None
-            else None
-        ),
-    )
-
-
 def pytest_sessionfinish(
     session: pytest.Session,
     exitstatus: int,
@@ -231,37 +172,60 @@ def pytest_sessionfinish(
 def pytest_runtest_makereport(
     item: pytest.Item,
     call: pytest.CallInfo[object],
-):
+) -> Iterator[None]:
     outcome = yield
     report = outcome.get_result()
 
-    if report.when != "call" or not report.failed:
+    # Record normal test results during the call phase.
+    # Setup failures and skips never reach the call phase.
+    if report.when == "setup":
+        if report.passed:
+            return
+    elif report.when != "call":
         return
 
     test_id_marker = item.get_closest_marker("test_id")
 
-    if test_id_marker and test_id_marker.args:
-        test_id = str(test_id_marker.args[0])
-    else:
-        test_id = item.nodeid
+    # Only include the 13 requirement-linked QA cases.
+    if not test_id_marker or not test_id_marker.args:
+        return
 
-    switches: dict[str, Switch] = {}
-    hosts: dict[str, Host] = {}
+    test_id = str(test_id_marker.args[0])
+    failure = str(report.longrepr) if report.failed else None
+    evidence_path: str | None = None
 
-    for fixture_value in item.funcargs.values():
-        if isinstance(fixture_value, Switch):
-            switches[fixture_value.name] = fixture_value
-        elif isinstance(fixture_value, Host):
-            hosts[fixture_value.name] = fixture_value
+    if report.failed:
+        switches: dict[str, Switch] = {}
+        hosts: dict[str, Host] = {}
 
-    evidence_directory = Path(
-        item.config.getoption("--evidence-dir")
+        for fixture_value in item.funcargs.values():
+            if isinstance(fixture_value, Switch):
+                switches[fixture_value.name] = fixture_value
+            elif isinstance(fixture_value, Host):
+                hosts[fixture_value.name] = fixture_value
+
+        evidence_directory = Path(item.config.getoption("--evidence-dir"))
+        collector = EvidenceCollector(evidence_directory)
+
+        collected_path = collector.collect(
+            test_id,
+            switches=switches,
+            hosts=hosts,
+            failure=failure or "Test failed without details.",
+        )
+        evidence_path = str(collected_path)
+
+    reporter = item.config.stash.get(
+        REPORTER_KEY,
+        None,
     )
-    collector = EvidenceCollector(evidence_directory)
 
-    collector.collect(
-        test_id,
-        switches=switches,
-        hosts=hosts,
-        failure=str(report.longrepr),
-    )
+    if reporter is not None:
+        reporter.record(
+            test_id=test_id,
+            node_id=item.nodeid,
+            outcome=report.outcome,
+            duration_seconds=report.duration,
+            failure=failure,
+            evidence_path=evidence_path,
+        )

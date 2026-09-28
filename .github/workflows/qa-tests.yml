@@ -1,0 +1,84 @@
+name: Switch QA
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: switch-qa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python 3.12 QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run Ruff
+        run: python -m ruff check .
+
+      - name: Run unit and QA test suites
+        run: |
+          python -m pytest \
+            --cov=switch_qa \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --junitxml=reports/junit.xml
+
+      - name: Verify 13-case QA test plan
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report_path = Path("reports/summary.json")
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          totals = report["totals"]
+
+          if totals["collected"] != 13:
+              raise SystemExit(
+                  f"Expected 13 QA cases, collected {totals['collected']}"
+              )
+
+          if totals["failed"] != 0:
+              raise SystemExit(
+                  f"{totals['failed']} QA case(s) failed"
+              )
+
+          print(
+              f"Verified {totals['collected']} QA cases: "
+              f"{totals['passed']} passed"
+          )
+          PY
+
+      - name: Upload QA reports and evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: switch-qa-results-${{ github.run_number }}
+          path: |
+            reports/
+            coverage.xml
+          if-no-files-found: warn
+          retention-days: 14
