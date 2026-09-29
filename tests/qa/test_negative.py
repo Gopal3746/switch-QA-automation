@@ -2,15 +2,15 @@ import pytest
 
 from switch_qa.devices import Host, Switch
 
+pytestmark = pytest.mark.simulation_only
+
 
 @pytest.mark.test_id("TC-09")
 def test_missing_trunk_vlan_is_detected(
     buggy_switch2: Switch,
 ) -> None:
     expected_vlans = {10, 20}
-    actual_vlans = set(
-        buggy_switch2.get_allowed_vlans("swp1")
-    )
+    actual_vlans = set(buggy_switch2.get_allowed_vlans("swp1"))
 
     missing_vlans = expected_vlans - actual_vlans
 

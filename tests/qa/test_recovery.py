@@ -3,6 +3,8 @@ import pytest
 from switch_qa.devices import Host, Switch
 from switch_qa.simulation import SimulatedTopologyState
 
+pytestmark = pytest.mark.simulation_only
+
 
 @pytest.mark.test_id("TC-12")
 @pytest.mark.simulation_only

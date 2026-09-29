@@ -2,6 +2,8 @@ import pytest
 
 from switch_qa.devices import Switch
 
+pytestmark = pytest.mark.simulation_only
+
 
 @pytest.mark.test_id("TC-05")
 def test_port_admin_down_and_up_transitions(

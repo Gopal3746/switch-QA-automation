@@ -1,13 +1,21 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from switch_qa.config import TopologyConfig, load_topology
+from switch_qa.backend import (
+    TransportBackend,
+    build_transport,
+)
+from switch_qa.config import (
+    DEFAULT_TOPOLOGY_PATH,
+    TopologyConfig,
+    load_topology,
+)
 from switch_qa.devices import Host, Switch
 from switch_qa.diagnostics import EvidenceCollector
 from switch_qa.reporter import RunReporter
-from switch_qa.simulated_transport import SimulatedTransport
 from switch_qa.simulation import SimulatedTopologyState
 
 REPORTER_KEY = pytest.StashKey[RunReporter]()
@@ -15,10 +23,23 @@ REPORTER_KEY = pytest.StashKey[RunReporter]()
 
 def build_switch(
     switch_name: str,
-    state: SimulatedTopologyState,
+    topology: TopologyConfig,
+    backend: TransportBackend,
+    state: SimulatedTopologyState | None,
+    *,
+    accept_unknown_host_keys: bool,
 ) -> Switch:
-    switch_config = state.config.switches[switch_name]
-    transport = SimulatedTransport(switch_name, state)
+    switch_config = topology.switches[switch_name]
+    password_variable = f"{switch_name.upper()}_PASSWORD"
+
+    transport = build_transport(
+        switch_name,
+        topology,
+        backend=backend,
+        state=state,
+        password=os.environ.get(password_variable),
+        accept_unknown_host_keys=accept_unknown_host_keys,
+    )
 
     switch = Switch(
         name=switch_name,
@@ -44,22 +65,46 @@ def build_host(
     )
 
 
-@pytest.fixture
-def topology() -> TopologyConfig:
-    return load_topology()
+@pytest.fixture(scope="session")
+def backend(
+    pytestconfig: pytest.Config,
+) -> TransportBackend:
+    return TransportBackend(pytestconfig.getoption("--backend"))
+
+
+@pytest.fixture(scope="session")
+def accept_unknown_host_keys(
+    pytestconfig: pytest.Config,
+) -> bool:
+    return bool(pytestconfig.getoption("--accept-unknown-host-keys"))
+
+
+@pytest.fixture(scope="session")
+def topology(
+    pytestconfig: pytest.Config,
+) -> TopologyConfig:
+    return load_topology(pytestconfig.getoption("--topology"))
 
 
 @pytest.fixture
 def fixed_state(
     topology: TopologyConfig,
-) -> SimulatedTopologyState:
+    backend: TransportBackend,
+) -> SimulatedTopologyState | None:
+    if backend is TransportBackend.SSH:
+        return None
+
     return SimulatedTopologyState.from_config(topology)
 
 
 @pytest.fixture
 def buggy_state(
     topology: TopologyConfig,
-) -> SimulatedTopologyState:
+    backend: TransportBackend,
+) -> SimulatedTopologyState | None:
+    if backend is TransportBackend.SSH:
+        return None
+
     return SimulatedTopologyState.from_config(
         topology,
         scenario="buggy",
@@ -68,18 +113,36 @@ def buggy_state(
 
 @pytest.fixture
 def switch1(
-    fixed_state: SimulatedTopologyState,
+    topology: TopologyConfig,
+    backend: TransportBackend,
+    accept_unknown_host_keys: bool,
+    fixed_state: SimulatedTopologyState | None,
 ) -> Iterator[Switch]:
-    switch = build_switch("switch1", fixed_state)
+    switch = build_switch(
+        "switch1",
+        topology,
+        backend,
+        fixed_state,
+        accept_unknown_host_keys=accept_unknown_host_keys,
+    )
     yield switch
     switch.disconnect()
 
 
 @pytest.fixture
 def switch2(
-    fixed_state: SimulatedTopologyState,
+    topology: TopologyConfig,
+    backend: TransportBackend,
+    accept_unknown_host_keys: bool,
+    fixed_state: SimulatedTopologyState | None,
 ) -> Iterator[Switch]:
-    switch = build_switch("switch2", fixed_state)
+    switch = build_switch(
+        "switch2",
+        topology,
+        backend,
+        fixed_state,
+        accept_unknown_host_keys=accept_unknown_host_keys,
+    )
     yield switch
     switch.disconnect()
 
@@ -102,18 +165,36 @@ def host_b(
 
 @pytest.fixture
 def buggy_switch1(
-    buggy_state: SimulatedTopologyState,
+    topology: TopologyConfig,
+    backend: TransportBackend,
+    accept_unknown_host_keys: bool,
+    buggy_state: SimulatedTopologyState | None,
 ) -> Iterator[Switch]:
-    switch = build_switch("switch1", buggy_state)
+    switch = build_switch(
+        "switch1",
+        topology,
+        backend,
+        buggy_state,
+        accept_unknown_host_keys=accept_unknown_host_keys,
+    )
     yield switch
     switch.disconnect()
 
 
 @pytest.fixture
 def buggy_switch2(
-    buggy_state: SimulatedTopologyState,
+    topology: TopologyConfig,
+    backend: TransportBackend,
+    accept_unknown_host_keys: bool,
+    buggy_state: SimulatedTopologyState | None,
 ) -> Iterator[Switch]:
-    switch = build_switch("switch2", buggy_state)
+    switch = build_switch(
+        "switch2",
+        topology,
+        backend,
+        buggy_state,
+        accept_unknown_host_keys=accept_unknown_host_keys,
+    )
     yield switch
     switch.disconnect()
 
@@ -134,6 +215,23 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("switch-qa")
 
     group.addoption(
+        "--backend",
+        choices=[backend.value for backend in TransportBackend],
+        default=TransportBackend.SIMULATED.value,
+        help="Command backend: simulated or ssh",
+    )
+    group.addoption(
+        "--topology",
+        default=str(DEFAULT_TOPOLOGY_PATH),
+        help="Path to the topology YAML configuration",
+    )
+    group.addoption(
+        "--accept-unknown-host-keys",
+        action="store_true",
+        default=False,
+        help="Allow SSH connections to unknown host keys",
+    )
+    group.addoption(
         "--evidence-dir",
         default="reports/evidence",
         help="Directory for failed-test diagnostic evidence",
@@ -146,11 +244,30 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "simulation_only: test modifies simulated topology state",
+    )
+
     config.stash[REPORTER_KEY] = RunReporter(
         matrix_path="configs/test_matrix.yaml",
         output_directory=config.getoption("--report-dir"),
-        scenario="simulated",
+        scenario=config.getoption("--backend"),
     )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config,
+    items: list[pytest.Item],
+) -> None:
+    if config.getoption("--backend") != "ssh":
+        return
+
+    live_skip = pytest.mark.skip(reason=("simulation-only test is disabled for live SSH switches"))
+
+    for item in items:
+        if item.get_closest_marker("simulation_only"):
+            item.add_marker(live_skip)
 
 
 def pytest_sessionfinish(
